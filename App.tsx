@@ -1,32 +1,30 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Student, 
   TeacherProfile, 
   AppConfig, 
   QuickLink,
   CustomSection
-} from './types';
+} from './types.ts';
 import { 
   INITIAL_STUDENTS, 
   INITIAL_TEACHER, 
   INITIAL_LINKS, 
   APP_CONFIG 
-} from './constants';
-import PublicView from './components/PublicView';
-import AdminDashboard from './components/AdminDashboard';
-import { supabase } from './services/supabase';
+} from './constants.ts';
+import PublicView from './components/PublicView.tsx';
+import AdminDashboard from './components/AdminDashboard.tsx';
+import { supabase } from './services/supabase.ts';
 import { 
-  Menu, 
-  X, 
   Lock, 
   User as UserIcon, 
   LogOut, 
   Heart,
-  ChevronRight,
   Cloud,
   CloudOff,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -35,6 +33,7 @@ const App: React.FC = () => {
   const [adminEmail, setAdminEmail] = useState('');
   const [isDbConnected, setIsDbConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   
   const [teacher, setTeacher] = useState<TeacherProfile>(() => {
     const saved = localStorage.getItem('teacher');
@@ -58,24 +57,20 @@ const App: React.FC = () => {
 
   const [config, setConfig] = useState<AppConfig>(APP_CONFIG);
 
-  // Initial Database Fetch
+  // Initial Data Fetch
   useEffect(() => {
     const fetchData = async () => {
       setIsSyncing(true);
       try {
-        // Fetch Teacher
         const { data: teacherData, error: tErr } = await supabase.from('teacher_profile').select('*').single();
         if (!tErr && teacherData) setTeacher(teacherData);
 
-        // Fetch Students
-        const { data: studentData, error: sErr } = await supabase.from('students').select('*');
+        const { data: studentData, error: sErr } = await supabase.from('students').select('*').order('created_at', { ascending: false });
         if (!sErr && studentData && studentData.length > 0) setStudents(studentData);
 
-        // Fetch Links
         const { data: linkData, error: lErr } = await supabase.from('links').select('*');
         if (!lErr && linkData && linkData.length > 0) setLinks(linkData);
 
-        // Fetch Sections
         const { data: sectionData, error: secErr } = await supabase.from('sections').select('*');
         if (!secErr && sectionData && sectionData.length > 0) setSections(sectionData);
 
@@ -85,13 +80,53 @@ const App: React.FC = () => {
         setIsDbConnected(false);
       } finally {
         setIsSyncing(false);
+        setIsInitializing(false);
       }
     };
 
     fetchData();
+
+    // Realtime Subscriptions
+    const studentChannel = supabase
+      .channel('realtime-students')
+      .on('postgres_changes', { event: '*', table: 'students', schema: 'public' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setStudents(prev => [payload.new as Student, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          setStudents(prev => prev.map(s => s.id === payload.new.id ? payload.new as Student : s));
+        } else if (payload.eventType === 'DELETE') {
+          setStudents(prev => prev.filter(s => s.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    const teacherChannel = supabase
+      .channel('realtime-teacher')
+      .on('postgres_changes', { event: 'UPDATE', table: 'teacher_profile', schema: 'public' }, (payload) => {
+        setTeacher(payload.new as TeacherProfile);
+      })
+      .subscribe();
+
+    const linksChannel = supabase
+      .channel('realtime-links')
+      .on('postgres_changes', { event: '*', table: 'links', schema: 'public' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setLinks(prev => [...prev, payload.new as QuickLink]);
+        } else if (payload.eventType === 'UPDATE') {
+          setLinks(prev => prev.map(l => l.id === payload.new.id ? payload.new as QuickLink : l));
+        } else if (payload.eventType === 'DELETE') {
+          setLinks(prev => prev.filter(l => l.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(studentChannel);
+      supabase.removeChannel(teacherChannel);
+      supabase.removeChannel(linksChannel);
+    };
   }, []);
 
-  // Sync to LocalStorage (Fallback)
   useEffect(() => {
     localStorage.setItem('teacher', JSON.stringify(teacher));
     localStorage.setItem('students', JSON.stringify(students));
@@ -114,9 +149,19 @@ const App: React.FC = () => {
     setAdminEmail('');
   };
 
+  if (isInitializing && !isDbConnected) {
+    return (
+      <div className="min-h-screen bg-amber-50 flex flex-col items-center justify-center">
+        <div className="bg-white p-8 rounded-3xl shadow-xl flex flex-col items-center gap-4">
+          <RefreshCw size={48} className="text-amber-500 animate-spin" />
+          <p className="font-bold text-indigo-950 uppercase tracking-widest text-xs">Initializing Portal...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Navigation */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-amber-100 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <div className="bg-amber-500 p-2 rounded-lg">
@@ -127,7 +172,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-1">
               {isDbConnected ? (
                 <span className="text-[8px] font-black text-green-500 flex items-center gap-1 uppercase tracking-widest">
-                  <Cloud size={8} /> Cloud Connected
+                  <Cloud size={8} /> Cloud Connected (Realtime)
                 </span>
               ) : (
                 <span className="text-[8px] font-black text-amber-500 flex items-center gap-1 uppercase tracking-widest">
@@ -138,13 +183,6 @@ const App: React.FC = () => {
           </div>
         </div>
         
-        <div className="hidden md:flex gap-8 text-sm font-medium">
-          <a href="#" className="hover:text-amber-600 transition-colors">Lessons</a>
-          <a href="#" className="hover:text-amber-600 transition-colors">Results</a>
-          <a href="#" className="hover:text-amber-600 transition-colors">Tutorials</a>
-          <a href="#" className="hover:text-amber-600 transition-colors">Guestbook</a>
-        </div>
-
         <div className="flex items-center gap-4">
           {isAdmin ? (
             <button 
@@ -198,7 +236,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="bg-white border-t border-amber-100 py-12 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
           <div>
@@ -210,16 +247,7 @@ const App: React.FC = () => {
             </div>
             <p className="text-gray-500 text-sm max-w-xs">Empowering the next generation of problem solvers through quality mathematical education.</p>
           </div>
-          
           <div className="flex gap-12">
-            <div>
-              <h4 className="font-bold mb-4 text-indigo-950">Platform</h4>
-              <ul className="text-sm text-gray-500 space-y-2">
-                <li><a href="#" className="hover:text-amber-600">Home</a></li>
-                <li><a href="#" className="hover:text-amber-600">Courses</a></li>
-                <li><a href="#" className="hover:text-amber-600">Support</a></li>
-              </ul>
-            </div>
             <div>
               <h4 className="font-bold mb-4 text-indigo-950">Links</h4>
               <ul className="text-sm text-gray-500 space-y-2">
@@ -235,7 +263,6 @@ const App: React.FC = () => {
         </div>
       </footer>
 
-      {/* Login Modal */}
       {showAdminLogin && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-6">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8 relative">
@@ -250,25 +277,21 @@ const App: React.FC = () => {
                 <Lock size={32} className="text-amber-600" />
               </div>
               <h2 className="text-2xl font-bold text-indigo-950">Admin Access</h2>
-              <p className="text-gray-500 text-sm mt-2">Please enter your authorized email to manage the portal.</p>
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                <input 
-                  type="email" 
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                  placeholder="e.g. admin@mathportal.com"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
-                  required
-                />
-              </div>
+              <input 
+                type="email" 
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="Email Address"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200"
+                required
+              />
               <button 
                 type="submit"
-                className="w-full bg-indigo-950 text-white py-4 rounded-xl font-bold hover:bg-indigo-900 transition-all shadow-lg"
+                className="w-full bg-indigo-950 text-white py-4 rounded-xl font-bold"
               >
-                Sign in as Admin
+                Sign in
               </button>
             </form>
           </div>

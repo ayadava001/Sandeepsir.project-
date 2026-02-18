@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Sparkles, Minus, BrainCircuit } from 'lucide-react';
-import { geminiService } from '../services/geminiService';
-import { Message } from '../types';
+import { geminiService } from '../services/geminiService.ts';
+import { Message } from '../types.ts';
 
 const AIChatBot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -69,7 +69,7 @@ const AIChatBot: React.FC = () => {
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-white px-4 py-3 rounded-2xl rounded-bl-none border border-amber-100 flex gap-1.5 items-center">
+                <div className="bg-white px-4 py-3 rounded-2xl border border-amber-100 flex gap-1.5 items-center">
                   <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce"></div>
                   <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                   <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
@@ -93,25 +93,22 @@ const AIChatBot: React.FC = () => {
               <button 
                 type="submit"
                 disabled={isLoading}
-                className="p-3 bg-indigo-950 text-white rounded-xl hover:bg-indigo-900 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-900/20"
+                className="p-3 bg-indigo-950 text-white rounded-xl hover:bg-indigo-900 transition-colors disabled:opacity-50"
               >
                 <Send size={18} />
               </button>
             </form>
           </div>
         </div>
-      ) : null}
-
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`bg-indigo-950 text-white p-4 rounded-2xl shadow-2xl hover:scale-110 hover:bg-amber-500 transition-all flex items-center gap-3 group ${isOpen ? 'hidden' : ''}`}
-      >
-        <div className="relative">
-          <BrainCircuit size={24} className="group-hover:rotate-12 transition-transform" />
-          <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 border-2 border-indigo-950 rounded-full"></div>
-        </div>
-        <span className="hidden md:inline font-black text-xs uppercase tracking-widest">Math AI Help</span>
-      </button>
+      ) : (
+        <button 
+          onClick={() => setIsOpen(true)}
+          className="bg-indigo-950 text-white p-4 rounded-2xl shadow-2xl hover:scale-110 hover:bg-amber-500 transition-all flex items-center gap-3 group"
+        >
+          <BrainCircuit size={24} />
+          <span className="hidden md:inline font-black text-xs uppercase tracking-widest">Math AI Help</span>
+        </button>
+      )}
     </div>
   );
 };
