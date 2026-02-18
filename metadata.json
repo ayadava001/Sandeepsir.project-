@@ -1,0 +1,7 @@
+{
+  "name": "Math Portal - Sandeep Baghel",
+  "description": "A warm and professional teacher portal featuring student achievements, admin management tools, and an AI math tutor.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
